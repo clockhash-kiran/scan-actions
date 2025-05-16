@@ -1,4 +1,4 @@
-name: 'Mid Phase - Trivy Scan'
+name: 'Mid Phase'
 description: 'Triggers a Trivy scan via API and fails on critical findings.'
 
 inputs:
