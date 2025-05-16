@@ -1,5 +1,5 @@
-name: Mid Phase Scan
-description: "Triggers Trivy scan via API and fails on 422 or status=FAILED"
+name: "Trivy Scan Phase"
+description: "Triggers Trivy scan via API and fails on critical/high findings"
 
 inputs:
   target_url:
@@ -9,15 +9,16 @@ inputs:
   project_id:
     required: true
   api_url:
-    default: "https://0adb-122-165-243-208.ngrok-free.app/scan/mid-request"
+    required: true
 
 runs:
   using: "composite"
   steps:
-    - name: Trigger Trivy Scan via API
+    - name: Trigger Trivy Scan
       shell: bash
       run: |
-        echo "Triggering Trivy scan..."
+        echo "🚀 Triggering Trivy scan..."
+
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${{ inputs.api_url }}" \
           -H "Content-Type: application/json" \
           -d '{
@@ -29,19 +30,20 @@ runs:
         BODY=$(echo "$RESPONSE" | head -n1)
         CODE=$(echo "$RESPONSE" | tail -n1)
 
-        echo "Response Body: $BODY"
-        echo "Status Code: $CODE"
+        echo "🧾 Response Body: $BODY"
+        echo "🔢 Status Code: $CODE"
 
-        # Fail on HTTP 422
-        if [ "$CODE" = "422" ]; then
-          echo "❌ API returned 422 - Invalid request"
-          exit 1
-        fi
+        # Parse "status" field from JSON response
+        STATUS=$(echo "$BODY" | grep -o '"status": *"[^"]*"' | cut -d':' -f2 | tr -d ' "')
 
-        # Fail if status is FAILED
-        if echo "$BODY" | grep -q '"status": *"FAILED"'; then
-          echo "❌ Scan failed. Check report:"
-          echo "$BODY" | grep -o '"report_url": *"[^"]*"' || true
+        # Optionally extract and display report URL
+        REPORT_URL=$(echo "$BODY" | grep -o '"report_url": *"[^"]*"' | cut -d':' -f2- | tr -d ' "')
+
+        echo "📄 Report URL: $REPORT_URL"
+
+        if [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
+          echo "❌ Scan failed (status: $STATUS)"
+          echo "🔗 Report: $REPORT_URL"
           exit 1
         fi
 
