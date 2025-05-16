@@ -21,7 +21,7 @@ runs:
     - name: Trigger Trivy scan
       shell: bash
       run: |
-        echo "🚀 Triggering Trivy scan..."
+        echo "🚀 Triggering scans..."
 
         # Send POST request and get response body + HTTP code separated by newline
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${{ inputs.api_url }}" \
@@ -43,10 +43,6 @@ runs:
         MESSAGE=$(echo "$BODY" | jq -r '.message // empty')
         REPORT_URL=$(echo "$BODY" | jq -r '.report_url // empty')
 
-        echo "🧾 Status: $STATUS"
-        echo "📝 Message: $MESSAGE"
-        echo "🔗 Report URL: $REPORT_URL"
-        echo "🔢 HTTP Status Code: $STATUS_CODE"
 
         # Fail the job if scan failed or HTTP code indicates failure
         if [ "$STATUS_CODE" = "422" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
