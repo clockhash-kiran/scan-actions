@@ -1,0 +1,48 @@
+name: Mid Phase Scan
+description: "Triggers Trivy scan via API and fails on 422 or status=FAILED"
+
+inputs:
+  target_url:
+    required: true
+  user_id:
+    required: true
+  project_id:
+    required: true
+  api_url:
+    default: "https://0adb-122-165-243-208.ngrok-free.app/scan/mid-request"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Trigger Trivy Scan via API
+      shell: bash
+      run: |
+        echo "Triggering Trivy scan..."
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${{ inputs.api_url }}" \
+          -H "Content-Type: application/json" \
+          -d '{
+                "target_url": "${{ inputs.target_url }}",
+                "user_id": "${{ inputs.user_id }}",
+                "project_id": "${{ inputs.project_id }}"
+              }')
+
+        BODY=$(echo "$RESPONSE" | head -n1)
+        CODE=$(echo "$RESPONSE" | tail -n1)
+
+        echo "Response Body: $BODY"
+        echo "Status Code: $CODE"
+
+        # Fail on HTTP 422
+        if [ "$CODE" = "422" ]; then
+          echo "❌ API returned 422 - Invalid request"
+          exit 1
+        fi
+
+        # Fail if status is FAILED
+        if echo "$BODY" | grep -q '"status": *"FAILED"'; then
+          echo "❌ Scan failed. Check report:"
+          echo "$BODY" | grep -o '"report_url": *"[^"]*"' || true
+          exit 1
+        fi
+
+        echo "✅ Scan completed successfully"
