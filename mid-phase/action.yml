@@ -1,5 +1,6 @@
 name: 'Mid Phase - Trivy Scan'
 description: 'Triggers a Trivy scan via API and fails on critical findings.'
+
 inputs:
   target_url:
     description: 'Target GitHub repository or deployed URL'
@@ -22,31 +23,35 @@ runs:
       run: |
         echo "🚀 Triggering Trivy scan..."
 
+        # Send POST request and get response body + HTTP code separated by newline
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${{ inputs.api_url }}" \
-        -H "Content-Type: application/json" \
-        -d '{
-              "target_url": "${{ inputs.target_url }}",
-              "user_id": "${{ inputs.user_id }}",
-              "project_id": "${{ inputs.project_id }}"
-            }')
+          -H "Content-Type: application/json" \
+          -d '{
+                "target_url": "${{ inputs.target_url }}",
+                "user_id": "${{ inputs.user_id }}",
+                "project_id": "${{ inputs.project_id }}"
+              }')
 
-      # Separate body and status code
-      STATUS_CODE=$(echo "$RESPONSE" | tail -n1)
-      BODY=$(echo "$RESPONSE" | sed '$d')
+        # Extract HTTP status code (last line)
+        STATUS_CODE=$(echo "$RESPONSE" | tail -n1)
 
-      # Parse JSON using jq
-      STATUS=$(echo "$BODY" | jq -r '.status // empty')
-      MESSAGE=$(echo "$BODY" | jq -r '.message // empty')
-      REPORT_URL=$(echo "$BODY" | jq -r '.report_url // empty')
+        # Extract response body (all except last line)
+        BODY=$(echo "$RESPONSE" | sed '$d')
 
-      echo "🧾 Status: $STATUS"
-      echo "📝 Message: $MESSAGE"
-      echo "🔗 Report URL: $REPORT_URL"
-      echo "🔢 HTTP Status Code: $STATUS_CODE"
+        # Parse JSON fields safely using jq
+        STATUS=$(echo "$BODY" | jq -r '.status // empty')
+        MESSAGE=$(echo "$BODY" | jq -r '.message // empty')
+        REPORT_URL=$(echo "$BODY" | jq -r '.report_url // empty')
 
-      if [ "$STATUS_CODE" = "422" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
-        echo "❌ Scan failed. See report: $REPORT_URL"
-        exit 1
-      fi
+        echo "🧾 Status: $STATUS"
+        echo "📝 Message: $MESSAGE"
+        echo "🔗 Report URL: $REPORT_URL"
+        echo "🔢 HTTP Status Code: $STATUS_CODE"
 
-      echo "✅ Scan completed successfully. Report: $REPORT_URL"
+        # Fail the job if scan failed or HTTP code indicates failure
+        if [ "$STATUS_CODE" = "422" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
+          echo "❌ Scan failed. See report: $REPORT_URL"
+          exit 1
+        fi
+
+        echo "✅ Scan completed successfully. Report: $REPORT_URL"
