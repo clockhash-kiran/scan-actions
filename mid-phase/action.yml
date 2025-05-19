@@ -1,5 +1,5 @@
-name: 'Mid Phase'
-description: 'Triggers a Trivy scan via API and fails on critical findings.'
+name: 'Post Phase'
+description: 'Triggers a zap and nikto scan via API and fails on critical findings.'
 
 inputs:
   target_url:
@@ -14,11 +14,14 @@ inputs:
   api_url:
     description: 'API URL to trigger the scan'
     required: true
+  api_token:
+    description: 'Bearer token for authorization'
+    required: true
 
 runs:
   using: 'composite'
   steps:
-    - name: Trigger Trivy scan
+    - name: Trigger Scans
       shell: bash
       run: |
         echo "🚀 Triggering scans..."
@@ -26,6 +29,7 @@ runs:
         # Send POST request and get response body + HTTP code separated by newline
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${{ inputs.api_url }}" \
           -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${{ inputs.api_token }}" \
           -d '{
                 "target_url": "${{ inputs.target_url }}",
                 "user_id": "${{ inputs.user_id }}",
@@ -43,6 +47,8 @@ runs:
         MESSAGE=$(echo "$BODY" | jq -r '.message // empty')
         REPORT_URL=$(echo "$BODY" | jq -r '.report_url // empty')
 
+        echo "ℹ️ Status: $STATUS"
+        echo "ℹ️ Message: $MESSAGE"
 
         # Fail the job if scan failed or HTTP code indicates failure
         if [ "$STATUS_CODE" = "422" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
