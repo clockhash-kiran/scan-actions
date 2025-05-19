@@ -26,49 +26,25 @@ runs:
       run: |
         echo "🚀 Triggering scans..."
 
-        # Prepare request payload
-        REQUEST_PAYLOAD=$(cat <<EOF
-{
-  "target_url": "${{ inputs.target_url }}",
-  "user_id": "${{ inputs.user_id }}",
-  "project_id": "${{ inputs.project_id }}"
-}
-EOF
-)
-
-        # Send POST request
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${{ inputs.api_url }}" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ inputs.api_token }}" \
-          -d "$REQUEST_PAYLOAD")
+          -d '{
+                "target_url": "${{ inputs.target_url }}",
+                "user_id": "${{ inputs.user_id }}",
+                "project_id": "${{ inputs.project_id }}"
+              }')
 
-        # Extract HTTP status code (last line)
         STATUS_CODE=$(echo "$RESPONSE" | tail -n1)
-
-        # Extract response body (all except last line)
         BODY=$(echo "$RESPONSE" | sed '$d')
 
-        echo "🔍 Response body:"
-        echo "$BODY"
-        echo "🔢 HTTP Status: $STATUS_CODE"
-
-        # Validate JSON
-        if ! echo "$BODY" | jq . > /dev/null 2>&1; then
-          echo "❌ ERROR: Invalid JSON response:"
-          echo "$BODY"
-          exit 1
-        fi
-
-        # Parse values
         STATUS=$(echo "$BODY" | jq -r '.status // empty')
         MESSAGE=$(echo "$BODY" | jq -r '.message // empty')
         REPORT_URL=$(echo "$BODY" | jq -r '.report_url // empty')
 
         echo "ℹ️ Status: $STATUS"
         echo "ℹ️ Message: $MESSAGE"
-        echo "📄 Report: $REPORT_URL"
 
-        # Fail the job if scan failed or HTTP error
         if [ "$STATUS_CODE" = "422" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
           echo "❌ Scan failed. See report: $REPORT_URL"
           exit 1
