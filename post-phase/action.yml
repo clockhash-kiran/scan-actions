@@ -17,16 +17,19 @@ inputs:
   api_token:
     description: 'Bearer token for authorization'
     required: true
+  scan_status_url:
+    description: 'API URL to poll scan status, must accept scan_id and user_id as query params'
+    required: true
 
 runs:
   using: 'composite'
   steps:
-    - name: Trigger Scans
+    - name: Trigger Scan
       shell: bash
+      id: trigger
       run: |
-        echo "🚀 Triggering scans..."
+        echo "🚀 Triggering scan..."
 
-        # Send POST request and get response body + HTTP code separated by newline
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "${{ inputs.api_url }}" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ inputs.api_token }}" \
@@ -36,24 +39,55 @@ runs:
                 "project_id": "${{ inputs.project_id }}"
               }')
 
-        # Extract HTTP status code (last line)
         STATUS_CODE=$(echo "$RESPONSE" | tail -n1)
-
-        # Extract response body (all except last line)
         BODY=$(echo "$RESPONSE" | sed '$d')
 
-        # Parse JSON fields safely using jq
-        STATUS=$(echo "$BODY" | jq -r '.status // empty')
-        MESSAGE=$(echo "$BODY" | jq -r '.message // empty')
+        SCAN_ID=$(echo "$BODY" | jq -r '.scan_id // empty')
         REPORT_URL=$(echo "$BODY" | jq -r '.report_url // empty')
 
-        echo "ℹ️ Status: $STATUS"
-        echo "ℹ️ Message: $MESSAGE"
-
-        # Fail the job if scan failed or HTTP code indicates failure
-        if [ "$STATUS_CODE" = "422" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
-          echo "❌ Scan failed. See report: $REPORT_URL"
+        if [ -z "$SCAN_ID" ]; then
+          echo "❌ Failed to retrieve scan ID."
           exit 1
         fi
 
-        echo "✅ Scan completed successfully. Report: $REPORT_URL"
+        echo "scan_id=$SCAN_ID" >> "$GITHUB_OUTPUT"
+        echo "report_url=$REPORT_URL" >> "$GITHUB_OUTPUT"
+
+    - name: Poll Scan Status
+      shell: bash
+      run: |
+        echo "📡 Polling scan status..."
+        SCAN_ID="${{ steps.trigger.outputs.scan_id }}"
+        MAX_WAIT=600  # 10 minutes
+        INTERVAL=10
+        ELAPSED=0
+
+        while [ "$ELAPSED" -lt "$MAX_WAIT" ]; do
+          STATUS_RESPONSE=$(curl -s -X GET "${{ inputs.scan_status_url }}?scan_id=$SCAN_ID&user_id=${{ inputs.user_id }}" \
+            -H "Authorization: Bearer ${{ inputs.api_token }}")
+
+          STATUS=$(echo "$STATUS_RESPONSE" | jq -r '.status // empty')
+          echo "⏱️ Elapsed: ${ELAPSED}s - Status: $STATUS"
+
+          if [ "$STATUS" = "COMPLETED" ]; then
+            echo "✅ Scan completed."
+            break
+          elif [ "$STATUS" = "FAILED" ]; then
+            echo "❌ Scan failed."
+            exit 1
+          fi
+
+          sleep "$INTERVAL"
+          ELAPSED=$((ELAPSED + INTERVAL))
+        done
+
+        if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
+          echo "⏰ Timeout reached waiting for scan to complete."
+          exit 1
+        fi
+
+    - name: Final Result
+      shell: bash
+      run: |
+        echo "✅ Security scan phase passed."
+        echo "📄 Report: ${{ steps.trigger.outputs.report_url }}"
