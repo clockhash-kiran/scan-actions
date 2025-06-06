@@ -1,0 +1,56 @@
+name: 'Pre Phase'
+description: 'Triggers a zap and nikto scan via API and fails on critical findings.'
+
+inputs:
+  target_url:
+    description: 'Target GitHub repository or deployed URL'
+    required: true
+  user_id:
+    description: 'User ID for the scan request'
+    required: true
+  project_id:
+    description: 'Project ID for the scan request'
+    required: true
+  api_token:
+    description: 'Bearer token for authorization'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Trigger Scans
+      shell: bash
+      run: |
+        echo "🚀 Triggering scans..."
+
+        # Send POST request and get response body + HTTP code separated by newline
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://41c5-122-165-243-208.ngrok-free.app/scan/pre-request" \
+          -H "Content-Type: application/json" \
+          -H "Authorization: Bearer ${{ inputs.api_token }}" \
+          -d '{
+                "target_url": "${{ inputs.target_url }}",
+                "user_id": "${{ inputs.user_id }}",
+                "project_id": "${{ inputs.project_id }}"
+              }')
+
+        # Extract HTTP status code (last line)
+        STATUS_CODE=$(echo "$RESPONSE" | tail -n1)
+
+        # Extract response body (all except last line)
+        BODY=$(echo "$RESPONSE" | sed '$d')
+
+        # Parse JSON fields safely using jq
+        STATUS=$(echo "$BODY" | jq -r '.status // empty')
+        MESSAGE=$(echo "$BODY" | jq -r '.message // empty')
+        REPORT_URL=$(echo "$BODY" | jq -r '.report_url // empty')
+
+        echo "ℹ️ Status: $STATUS"
+        echo "ℹ️ Message: $MESSAGE"
+
+        # Fail the job if scan failed or HTTP code indicates failure
+        if [ "$STATUS_CODE" = "422" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
+          echo "❌ Scan failed. See report: $REPORT_URL"
+          exit 1
+        fi
+
+        echo "✅ Scan completed successfully. Report: $REPORT_URL"
