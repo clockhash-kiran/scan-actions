@@ -24,7 +24,7 @@ runs:
         echo "🚀 Triggering scans..."
 
         # Send POST request and get response body + HTTP code separated by newline
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://0912-43-229-90-98.ngrok-free.app/scan/pre-request" \
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://0a3b-122-165-243-208.ngrok-free.app/scan/pre-request" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ inputs.api_token }}" \
           -d '{
