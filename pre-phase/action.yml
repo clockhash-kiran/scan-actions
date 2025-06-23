@@ -14,7 +14,7 @@ inputs:
   api_token:
     description: 'Bearer token for authorization'
     required: true
-  pat_token:
+  pat:
     description: 'Optional GitHub PAT for private repo access'
     required: false
 
@@ -31,7 +31,7 @@ runs:
           --arg url "${{ inputs.target_url }}" \
           --arg uid "${{ inputs.user_id }}" \
           --arg pid "${{ inputs.project_id }}" \
-          --arg pat "${{ inputs.pat_token }}" \
+          --arg pat "${{ inputs.pat }}" \
           '{
             target_url: $url,
             user_id: $uid,
