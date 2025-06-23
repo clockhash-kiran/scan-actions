@@ -14,6 +14,9 @@ inputs:
   api_token:
     description: 'Bearer token for authorization'
     required: true
+  pat_token:
+    description: 'Optional GitHub PAT for private repo access'
+    required: false
 
 runs:
   using: 'composite'
@@ -23,23 +26,29 @@ runs:
       run: |
         echo "🚀 Triggering scans..."
 
-        # Send POST request and get response body + HTTP code separated by newline
+        # Dynamically build JSON payload with optional PAT
+        JSON_PAYLOAD=$(jq -n \
+          --arg url "${{ inputs.target_url }}" \
+          --arg uid "${{ inputs.user_id }}" \
+          --arg pid "${{ inputs.project_id }}" \
+          --arg pat "${{ inputs.pat_token }}" \
+          '{
+            target_url: $url,
+            user_id: $uid,
+            project_id: $pid
+          } + ( $pat | select(length > 0) | { pat_token: . })')
+
+        echo "📦 JSON Payload:"
+        echo "$JSON_PAYLOAD"
+
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://5288-122-165-243-208.ngrok-free.app/scan/post-request" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ inputs.api_token }}" \
-          -d '{
-                "target_url": "${{ inputs.target_url }}",
-                "user_id": "${{ inputs.user_id }}",
-                "project_id": "${{ inputs.project_id }}"
-              }')
+          -d "$JSON_PAYLOAD")
 
-        # Extract HTTP status code (last line)
         STATUS_CODE=$(echo "$RESPONSE" | tail -n1)
-
-        # Extract response body (all except last line)
         BODY=$(echo "$RESPONSE" | sed '$d')
 
-        # Parse JSON fields safely using jq
         STATUS=$(echo "$BODY" | jq -r '.status // empty')
         MESSAGE=$(echo "$BODY" | jq -r '.message // empty')
         REPORT_URL=$(echo "$BODY" | jq -r '.report_url // empty')
@@ -47,7 +56,6 @@ runs:
         echo "ℹ️ Status: $STATUS"
         echo "ℹ️ Message: $MESSAGE"
 
-        # Fail the job if scan failed or HTTP code indicates failure
         if [ "$STATUS_CODE" = "422" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
           echo "❌ Scan failed. See report: $REPORT_URL"
           exit 1
