@@ -14,6 +14,9 @@ inputs:
   api_token:
     description: 'Bearer token for authorization'
     required: true
+  pat_token:
+    description: 'Optional GitHub PAT for private repo access'
+    required: false
 
 runs:
   using: 'composite'
@@ -23,36 +26,41 @@ runs:
       run: |
         echo "🚀 Triggering scans..."
 
-        # Send POST request and get full response + HTTP code on last line
+        # Construct JSON payload
+        JSON_PAYLOAD=$(jq -n \
+          --arg url "${{ inputs.target_url }}" \
+          --arg uid "${{ inputs.user_id }}" \
+          --arg pid "${{ inputs.project_id }}" \
+          --arg pat "${{ inputs.pat_token }}" \
+          '{
+            target_url: $url,
+            user_id: $uid,
+            project_id: $pid
+          } + ( $pat | select(length > 0) | { pat_token: . })')
+
+        echo "📦 JSON Payload:"
+        echo "$JSON_PAYLOAD"
+
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://5288-122-165-243-208.ngrok-free.app/scan/mid-request" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ inputs.api_token }}" \
-          -d '{
-                "target_url": "${{ inputs.target_url }}",
-                "user_id": "${{ inputs.user_id }}",
-                "project_id": "${{ inputs.project_id }}"
-              }')
+          -d "$JSON_PAYLOAD")
 
         echo "🔍 Full raw response (body + status code):"
         echo "$RESPONSE"
 
-        # Extract HTTP status code (last line)
         STATUS_CODE=$(echo "$RESPONSE" | tail -n1)
-
-        # Extract response body (all but last line)
         BODY=$(echo "$RESPONSE" | sed '$d')
 
         echo "ℹ️ HTTP Status Code: $STATUS_CODE"
         echo "ℹ️ Response Body:"
         echo "$BODY"
 
-        # Check if response body is empty or not valid JSON before parsing with jq
         if [ -z "$BODY" ]; then
           echo "❌ Response body is empty, cannot parse JSON."
           exit 1
         fi
 
-        # Try parsing fields with jq safely
         STATUS=$(echo "$BODY" | jq -r '.status // empty' 2>/dev/null || echo "jq parse failed")
         MESSAGE=$(echo "$BODY" | jq -r '.message // empty' 2>/dev/null || echo "jq parse failed")
         REPORT_URL=$(echo "$BODY" | jq -r '.report_url // empty' 2>/dev/null || echo "jq parse failed")
@@ -60,7 +68,6 @@ runs:
         echo "ℹ️ Parsed Status: $STATUS"
         echo "ℹ️ Parsed Message: $MESSAGE"
 
-        # Fail if HTTP error or scan status is FAILED or ERROR
         if [ "$STATUS_CODE" = "422" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
           echo "❌ Scan failed. See report: $REPORT_URL"
           exit 1
