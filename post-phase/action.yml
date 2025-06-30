@@ -41,7 +41,7 @@ runs:
         echo "📦 JSON Payload:"
         echo "$JSON_PAYLOAD"
 
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://5288-122-165-243-208.ngrok-free.app/scan/post-request" \
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://scan.clockhash.com/backend/scan/post-request" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ inputs.api_token }}" \
           -d "$JSON_PAYLOAD")
