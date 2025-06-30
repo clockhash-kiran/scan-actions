@@ -26,17 +26,19 @@ runs:
       run: |
         echo "🚀 Triggering scans..."
 
-        # Construct JSON body with optional PAT
+        # Construct JSON body with optional PAT safely
         JSON_PAYLOAD=$(jq -n \
           --arg url "${{ inputs.target_url }}" \
           --arg uid "${{ inputs.user_id }}" \
           --arg pid "${{ inputs.project_id }}" \
-          --arg pat "${{ inputs.pat }}" \
-          '{
+          --arg pat "${{ inputs.pat || '' }}" \
+          '
+          {
             target_url: $url,
             user_id: $uid,
             project_id: $pid
-          } + ($pat | select(length > 0) | { pat_token: . })')
+          }
+          + (if $pat != "" then { pat_token: $pat } else {} end)')
 
         echo "📦 Payload:"
         echo "$JSON_PAYLOAD"
