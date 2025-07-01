@@ -1,5 +1,5 @@
 name: 'Pre Phase'
-description: 'Triggers a zap and nikto scan via API and fails on critical findings.'
+description: 'Triggers a pre-deployment scan via API and fails on critical findings.'
 
 inputs:
   target_url:
@@ -21,12 +21,11 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - name: Trigger Scans
+    - name: Trigger Pre-Scan
       shell: bash
       run: |
         echo "::group::🚀 Triggering Pre-Scan"
 
-        # Build JSON payload
         JSON_PAYLOAD=$(jq -n \
           --arg url "${{ inputs.target_url }}" \
           --arg uid "${{ inputs.user_id }}" \
@@ -40,9 +39,6 @@ runs:
           }
           + (if $pat != "" then { pat_token: $pat } else {} end)')
 
-        echo "Payload constructed."
-
-        # Send scan request
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://scan.clockhash.com/backend/scan/pre-request" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ inputs.api_token }}" \
@@ -53,27 +49,58 @@ runs:
 
         echo "::endgroup::"
 
-        echo "::group::📡 Scan Response Summary"
+        echo "::group::📡 Scan Trigger Response"
 
         if [ -z "$BODY" ]; then
-          echo "::error::Empty response body. Scan failed."
+          echo "::error::Empty response body. Trigger failed."
           exit 1
         fi
 
-        STATUS=$(echo "$BODY" | jq -r '.status // empty' 2>/dev/null || echo "parse_failed")
-        MESSAGE=$(echo "$BODY" | jq -r '.message // empty' 2>/dev/null || echo "parse_failed")
-        REPORT_URL=$(echo "$BODY" | jq -r '.report_url // empty' 2>/dev/null || echo "parse_failed")
+        EVENT_ID=$(echo "$BODY" | jq -r '.event_id // empty')
+        STATUS=$(echo "$BODY" | jq -r '.status // empty')
+        MESSAGE=$(echo "$BODY" | jq -r '.message // empty')
 
-        echo "🟡 Status      : $STATUS"
-        echo "📝 Message     : $MESSAGE"
-        echo "🔗 Report URL  : $REPORT_URL"
         echo "📦 HTTP Code   : $STATUS_CODE"
+        echo "🔖 Event ID    : $EVENT_ID"
+        echo "📝 Message     : $MESSAGE"
+
+        if [ "$STATUS_CODE" != "200" ] || [ -z "$EVENT_ID" ]; then
+          echo "::error::Scan trigger failed. Status: $STATUS, Message: $MESSAGE"
+          exit 1
+        fi
 
         echo "::endgroup::"
 
-        if [ "$STATUS_CODE" = "422" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
-          echo "::error::Scan failed. See report: $REPORT_URL"
+        echo "::group::⏳ Polling Scan Status"
+
+        POLL_URL="https://scan.clockhash.com/backend/scan/scan-status?event_id=$EVENT_ID&user_id=${{ inputs.user_id }}"
+        ATTEMPTS=30
+        INTERVAL=10
+
+        for i in $(seq 1 $ATTEMPTS); do
+          echo "🔄 Poll attempt $i..."
+
+          POLL_RESPONSE=$(curl -s -X GET "$POLL_URL" \
+            -H "Authorization: Bearer ${{ inputs.api_token }}")
+
+          CURRENT_STATUS=$(echo "$POLL_RESPONSE" | jq -r '.status // empty')
+
+          echo "📊 Current Status: $CURRENT_STATUS"
+
+          if [ "$CURRENT_STATUS" = "COMPLETED" ]; then
+            echo "::notice::✅ Pre-scan passed."
+            break
+          elif [ "$CURRENT_STATUS" = "FAILED" ]; then
+            echo "::error::❌ Pre-scan failed. Check report for details: https://scan.clockhash.com/report/$EVENT_ID"
+            exit 1
+          fi
+
+          sleep $INTERVAL
+        done
+
+        echo "::endgroup::"
+
+        if [ "$CURRENT_STATUS" != "COMPLETED" ]; then
+          echo "::error::Scan timed out or did not complete."
           exit 1
         fi
-
-        echo "::notice::✅ Pre-scan completed successfully. Report: $REPORT_URL"
