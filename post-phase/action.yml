@@ -21,7 +21,7 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - name: Trigger and Monitor Post-Scan
+    - name: Trigger Post-Scan
       shell: bash
       run: |
         echo "::group::🚀 Triggering Post-Scan"
@@ -30,14 +30,12 @@ runs:
           --arg url "${{ inputs.target_url }}" \
           --arg uid "${{ inputs.user_id }}" \
           --arg pid "${{ inputs.project_id }}" \
-          --arg pat "${{ inputs.pat || '' }}" \
-          '
+          --arg pat "${{ inputs.pat || '' }}" '
           {
             target_url: $url,
             user_id: $uid,
             project_id: $pid
-          }
-          + (if $pat != "" then { pat_token: $pat } else {} end)')
+          } + (if $pat != "" then { pat_token: $pat } else {} end)')
 
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://scan.clockhash.com/backend/scan/post-request" \
           -H "Content-Type: application/json" \
@@ -46,20 +44,11 @@ runs:
 
         STATUS_CODE=$(echo "$RESPONSE" | tail -n1)
         BODY=$(echo "$RESPONSE" | sed '$d')
-
-        if [ -z "$BODY" ]; then
-          echo "::error::Empty response body. Scan trigger failed."
-          exit 1
-        fi
-
         EVENT_ID=$(echo "$BODY" | jq -r '.event_id // empty')
         MESSAGE=$(echo "$BODY" | jq -r '.message // empty')
 
-        echo "🔖 Event ID   : $EVENT_ID"
-        echo "📝 Message    : $MESSAGE"
-
         if [ "$STATUS_CODE" != "200" ] || [ -z "$EVENT_ID" ]; then
-          echo "::error::Scan trigger failed. HTTP $STATUS_CODE - $MESSAGE"
+          echo "::error::Failed to trigger scan. Message: $MESSAGE"
           exit 1
         fi
 
@@ -74,30 +63,28 @@ runs:
         for i in $(seq 1 $ATTEMPTS); do
           POLL_RESPONSE=$(curl -s -X GET "$POLL_URL" -H "Authorization: Bearer ${{ inputs.api_token }}")
           CURRENT_STATUS=$(echo "$POLL_RESPONSE" | jq -r '.status // empty')
-          REPORT_URL=$(echo "$POLL_RESPONSE" | jq -r '.report_url // empty')
 
           if [ "$CURRENT_STATUS" != "$LAST_STATUS" ]; then
             echo "🔄 Status changed: $LAST_STATUS ➡️ $CURRENT_STATUS"
             LAST_STATUS="$CURRENT_STATUS"
           fi
 
-          if [ "$CURRENT_STATUS" = "COMPLETED" ]; then
-            echo "::notice::✅ Post-scan completed successfully."
-            echo "🔗 [View Report]($REPORT_URL)"
-            break
-          elif [ "$CURRENT_STATUS" = "FAILED" ]; then
-            echo "::error::❌ Post-scan failed."
-            echo "🔗 [View Report]($REPORT_URL)"
-            exit 1
-          fi
+          if [ "$CURRENT_STATUS" = "COMPLETED" ]; then break; fi
+          if [ "$CURRENT_STATUS" = "FAILED" ]; then break; fi
 
           sleep $INTERVAL
         done
 
+        REPORT_URL=$(echo "$POLL_RESPONSE" | jq -r '.report_url // empty')
         echo "::endgroup::"
 
-        if [ "$CURRENT_STATUS" != "COMPLETED" ]; then
-          echo "::error::Scan timed out or did not complete."
-          echo "🔗 [View Report](https://scan.clockhash.com/report/$EVENT_ID)"
+        if [ "$CURRENT_STATUS" = "COMPLETED" ]; then
+          echo "::notice::✅ Post-scan completed. [View Report](${REPORT_URL:-https://scan.clockhash.com/report/$EVENT_ID})"
+        elif [ "$CURRENT_STATUS" = "FAILED" ]; then
+          echo "::error::❌ Post-scan failed. [View Report](${REPORT_URL:-https://scan.clockhash.com/report/$EVENT_ID})"
+          exit 1
+        else
+          echo "::error::⚠️ Scan timed out. Final status: $CURRENT_STATUS"
+          echo "🔗 [View Report](${REPORT_URL:-https://scan.clockhash.com/report/$EVENT_ID})"
           exit 1
         fi
