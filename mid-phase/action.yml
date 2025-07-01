@@ -24,9 +24,9 @@ runs:
     - name: Trigger Scans
       shell: bash
       run: |
-        echo "🚀 Triggering scans..."
+        echo "::group::🚀 Triggering Scan Request"
 
-        # Construct JSON payload with safe optional pat
+        # Build JSON payload
         JSON_PAYLOAD=$(jq -n \
           --arg url "${{ inputs.target_url }}" \
           --arg uid "${{ inputs.user_id }}" \
@@ -40,39 +40,40 @@ runs:
           }
           + (if $pat != "" then { pat_token: $pat } else {} end)')
 
-        echo "📦 JSON Payload:"
-        echo "$JSON_PAYLOAD"
+        echo "Payload prepared."
 
+        # Send scan request
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://scan.clockhash.com/backend/scan/mid-request" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ inputs.api_token }}" \
           -d "$JSON_PAYLOAD")
 
-        echo "🔍 Full raw response (body + status code):"
-        echo "$RESPONSE"
-
         STATUS_CODE=$(echo "$RESPONSE" | tail -n1)
         BODY=$(echo "$RESPONSE" | sed '$d')
 
-        echo "ℹ️ HTTP Status Code: $STATUS_CODE"
-        echo "ℹ️ Response Body:"
-        echo "$BODY"
+        echo "::endgroup::"
+
+        echo "::group::📡 Scan Response Summary"
 
         if [ -z "$BODY" ]; then
-          echo "❌ Response body is empty, cannot parse JSON."
+          echo "::error::Empty response body. Scan failed."
           exit 1
         fi
 
-        STATUS=$(echo "$BODY" | jq -r '.status // empty' 2>/dev/null || echo "jq parse failed")
-        MESSAGE=$(echo "$BODY" | jq -r '.message // empty' 2>/dev/null || echo "jq parse failed")
-        REPORT_URL=$(echo "$BODY" | jq -r '.report_url // empty' 2>/dev/null || echo "jq parse failed")
+        STATUS=$(echo "$BODY" | jq -r '.status // empty' 2>/dev/null || echo "parse_failed")
+        MESSAGE=$(echo "$BODY" | jq -r '.message // empty' 2>/dev/null || echo "parse_failed")
+        REPORT_URL=$(echo "$BODY" | jq -r '.report_url // empty' 2>/dev/null || echo "parse_failed")
 
-        echo "ℹ️ Parsed Status: $STATUS"
-        echo "ℹ️ Parsed Message: $MESSAGE"
+        echo "🟡 Status      : $STATUS"
+        echo "📝 Message     : $MESSAGE"
+        echo "🔗 Report URL  : $REPORT_URL"
+        echo "📦 HTTP Code   : $STATUS_CODE"
+
+        echo "::endgroup::"
 
         if [ "$STATUS_CODE" = "422" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
-          echo "❌ Scan failed. See report: $REPORT_URL"
+          echo "::error::Scan failed. See report: $REPORT_URL"
           exit 1
         fi
 
-        echo "✅ Scan completed successfully. Report: $REPORT_URL"
+        echo "::notice::✅ Scan completed successfully. Report: $REPORT_URL"

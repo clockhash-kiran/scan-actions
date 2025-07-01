@@ -24,9 +24,9 @@ runs:
     - name: Trigger Scans
       shell: bash
       run: |
-        echo "🚀 Triggering scans..."
+        echo "::group::🚀 Triggering Pre-Scan"
 
-        # Construct JSON body with optional PAT safely
+        # Build JSON payload
         JSON_PAYLOAD=$(jq -n \
           --arg url "${{ inputs.target_url }}" \
           --arg uid "${{ inputs.user_id }}" \
@@ -40,9 +40,9 @@ runs:
           }
           + (if $pat != "" then { pat_token: $pat } else {} end)')
 
-        echo "📦 Payload:"
-        echo "$JSON_PAYLOAD"
+        echo "Payload constructed."
 
+        # Send scan request
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://scan.clockhash.com/backend/scan/pre-request" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ inputs.api_token }}" \
@@ -51,16 +51,29 @@ runs:
         STATUS_CODE=$(echo "$RESPONSE" | tail -n1)
         BODY=$(echo "$RESPONSE" | sed '$d')
 
-        STATUS=$(echo "$BODY" | jq -r '.status // empty')
-        MESSAGE=$(echo "$BODY" | jq -r '.message // empty')
-        REPORT_URL=$(echo "$BODY" | jq -r '.report_url // empty')
+        echo "::endgroup::"
 
-        echo "ℹ️ Status: $STATUS"
-        echo "ℹ️ Message: $MESSAGE"
+        echo "::group::📡 Scan Response Summary"
 
-        if [ "$STATUS_CODE" = "422" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
-          echo "❌ Scan failed. See report: $REPORT_URL"
+        if [ -z "$BODY" ]; then
+          echo "::error::Empty response body. Scan failed."
           exit 1
         fi
 
-        echo "✅ Scan completed successfully. Report: $REPORT_URL"
+        STATUS=$(echo "$BODY" | jq -r '.status // empty' 2>/dev/null || echo "parse_failed")
+        MESSAGE=$(echo "$BODY" | jq -r '.message // empty' 2>/dev/null || echo "parse_failed")
+        REPORT_URL=$(echo "$BODY" | jq -r '.report_url // empty' 2>/dev/null || echo "parse_failed")
+
+        echo "🟡 Status      : $STATUS"
+        echo "📝 Message     : $MESSAGE"
+        echo "🔗 Report URL  : $REPORT_URL"
+        echo "📦 HTTP Code   : $STATUS_CODE"
+
+        echo "::endgroup::"
+
+        if [ "$STATUS_CODE" = "422" ] || [ "$STATUS" = "FAILED" ] || [ "$STATUS" = "ERROR" ]; then
+          echo "::error::Scan failed. See report: $REPORT_URL"
+          exit 1
+        fi
+
+        echo "::notice::✅ Pre-scan completed successfully. Report: $REPORT_URL"
