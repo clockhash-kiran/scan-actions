@@ -17,6 +17,9 @@ inputs:
   pat:
     description: 'Optional GitHub PAT for private repo access'
     required: false
+  branch:
+    description: 'Optional branch name'
+    required: false
 
 runs:
   using: 'composite'
@@ -30,12 +33,15 @@ runs:
           --arg url "${{ inputs.target_url }}" \
           --arg uid "${{ inputs.user_id }}" \
           --arg pid "${{ inputs.project_id }}" \
-          --arg pat "${{ inputs.pat || '' }}" '
+          --arg pat "${{ inputs.pat || '' }}" \
+          --arg branch "${{ inputs.branch || '' }}" '
           {
             target_url: $url,
             user_id: $uid,
             project_id: $pid
-          } + (if $pat != "" then { pat_token: $pat } else {} end)')
+          }
+          + (if $pat != "" then { pat_token: $pat } else {} end)
+          + (if $branch != "" then { branch: $branch } else {} end)')
 
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://scan.clockhash.com/backend/scan/pre-request" \
           -H "Content-Type: application/json" \
