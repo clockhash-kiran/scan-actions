@@ -29,12 +29,18 @@ runs:
       run: |
         echo "::group::🚀 Triggering Pre-Scan"
 
+        # Capture optional inputs safely
+        BRANCH_INPUT="${{ inputs.branch }}"
+        PAT_INPUT="${{ inputs.pat }}"
+
+        echo "🔧 Branch input: '$BRANCH_INPUT'"
+
         JSON_PAYLOAD=$(jq -n \
           --arg url "${{ inputs.target_url }}" \
           --arg uid "${{ inputs.user_id }}" \
           --arg pid "${{ inputs.project_id }}" \
-          --arg pat "${{ inputs.pat || '' }}" \
-          --arg branch "${{ inputs.branch || '' }}" '
+          --arg pat "$PAT_INPUT" \
+          --arg branch "$BRANCH_INPUT" '
           {
             target_url: $url,
             user_id: $uid,
