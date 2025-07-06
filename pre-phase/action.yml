@@ -63,7 +63,7 @@ runs:
           echo "::error::Failed to trigger scan. Message: $MESSAGE"
           exit 1
         fi
-
+        echo "Payload: $JSON_PAYLOAD"
         echo "::endgroup::"
         echo "::group::⏳ Polling Scan Status"
 
