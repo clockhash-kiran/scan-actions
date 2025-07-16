@@ -49,7 +49,7 @@ runs:
           + (if $pat != "" then { pat_token: $pat } else {} end)
           + (if $branch != "" then { branch: $branch } else {} end)')
 
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://scan.clockhash.com/backend/scan/pre-request" \
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://secureci.clockhash.com/backend/scan/pre-request" \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ inputs.api_token }}" \
           -d "$JSON_PAYLOAD")
@@ -67,7 +67,7 @@ runs:
         echo "::endgroup::"
         echo "::group::⏳ Polling Scan Status"
 
-        POLL_URL="https://scan.clockhash.com/backend/scan/scan-status?event_id=$EVENT_ID&user_id=${{ inputs.user_id }}"
+        POLL_URL="https://secureci.clockhash.com/backend/scan/scan-status?event_id=$EVENT_ID&user_id=${{ inputs.user_id }}"
         ATTEMPTS=30
         INTERVAL=10
         LAST_STATUS=""
@@ -91,12 +91,12 @@ runs:
         echo "::endgroup::"
 
         if [ "$CURRENT_STATUS" = "COMPLETED" ]; then
-          echo "::notice::✅ Pre-scan completed. [View Report](${REPORT_URL:-https://scan.clockhash.com/report/$EVENT_ID})"
+          echo "::notice::✅ Pre-scan completed. [View Report](${REPORT_URL:-https://secureci.clockhash.com/report/$EVENT_ID})"
         elif [ "$CURRENT_STATUS" = "FAILED" ]; then
-          echo "::error::❌ Pre-scan failed. [View Report](${REPORT_URL:-https://scan.clockhash.com/report/$EVENT_ID})"
+          echo "::error::❌ Pre-scan failed. [View Report](${REPORT_URL:-https://secureci.clockhash.com/report/$EVENT_ID})"
           exit 1
         else
           echo "::error::⚠️ Scan timed out. Final status: $CURRENT_STATUS"
-          echo "🔗 [View Report](${REPORT_URL:-https://scan.clockhash.com/report/$EVENT_ID})"
+          echo "🔗 [View Report](${REPORT_URL:-https://secureci.clockhash.com/report/$EVENT_ID})"
           exit 1
         fi
