@@ -21,16 +21,18 @@ inputs:
 runs:
   using: 'composite'
   steps:
-    - name: Trigger Post-Scan
+    - name: Trigger and Monitor Post-Scan
       shell: bash
       run: |
         echo "::group::🚀 Triggering Post-Scan"
+
+        PAT_INPUT="${{ inputs.pat }}"
 
         JSON_PAYLOAD=$(jq -n \
           --arg url "${{ inputs.target_url }}" \
           --arg uid "${{ inputs.user_id }}" \
           --arg pid "${{ inputs.project_id }}" \
-          --arg pat "${{ inputs.pat || '' }}" '
+          --arg pat "$PAT_INPUT" '
           {
             target_url: $url,
             user_id: $uid,
@@ -69,22 +71,34 @@ runs:
             LAST_STATUS="$CURRENT_STATUS"
           fi
 
-          if [ "$CURRENT_STATUS" = "COMPLETED" ]; then break; fi
-          if [ "$CURRENT_STATUS" = "FAILED" ]; then break; fi
+          if [ "$CURRENT_STATUS" = "COMPLETED" ] || [ "$CURRENT_STATUS" = "FAILED" ]; then
+            break
+          fi
 
           sleep $INTERVAL
         done
 
-        REPORT_URL=$(echo "$POLL_RESPONSE" | jq -r '.report_url // empty')
         echo "::endgroup::"
 
+        REPORT_URL="https://secureci.clockhash.com/report/$EVENT_ID"
+
         if [ "$CURRENT_STATUS" = "COMPLETED" ]; then
-          echo "::notice::✅ Post-scan completed. [View Report](${REPORT_URL:-https://secureci.clockhash.com/report/$EVENT_ID})"
+          echo "::notice::✅ Post-scan completed. [View Report]($REPORT_URL)"
         elif [ "$CURRENT_STATUS" = "FAILED" ]; then
-          echo "::error::❌ Post-scan failed. [View Report](${REPORT_URL:-https://secureci.clockhash.com/report/$EVENT_ID})"
+          echo "::error::❌ Post-scan failed. [View Report]($REPORT_URL)"
+
+          SUMMARIES=$(echo "$POLL_RESPONSE" | jq -c '.scan_summaries[]?')
+          if [ -n "$SUMMARIES" ]; then
+            echo "$SUMMARIES" | while read -r item; do
+              TOOL=$(echo "$item" | jq -r '.tool_name')
+              MSG=$(echo "$item" | jq -r '.summary.message')
+              echo "::error::[$TOOL] $MSG"
+            done
+          fi
+
           exit 1
         else
-          echo "::error::⚠️ Scan timed out. Final status: $CURRENT_STATUS"
-          echo "🔗 [View Report](${REPORT_URL:-https://secureci.clockhash.com/report/$EVENT_ID})"
+          echo "::error::⚠️ Scan timed out after $((ATTEMPTS * INTERVAL)) seconds. Final status: $CURRENT_STATUS"
+          echo "🔗 [View Report]($REPORT_URL)"
           exit 1
         fi
