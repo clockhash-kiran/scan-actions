@@ -27,24 +27,36 @@ runs:
     - name: Trigger and Monitor Pre-Scan
       shell: bash
       run: |
+        set -euo pipefail
+
         echo "::group::🚀 Triggering Pre-Scan"
 
-        BRANCH_INPUT="${{ inputs.branch }}"
-        PAT_INPUT="${{ inputs.pat }}"
+        BRANCH_INPUT="${{ inputs.branch || '' }}"
+        PAT_INPUT="${{ inputs.pat || '' }}"
+
+        echo "DEBUG: Preparing JSON payload..."
+        echo "  url=${{ inputs.target_url }}"
+        echo "  uid=${{ inputs.user_id }}"
+        echo "  pid=${{ inputs.project_id }}"
+        echo "  pat=$PAT_INPUT"
+        echo "  branch=$BRANCH_INPUT"
 
         JSON_PAYLOAD=$(jq -n \
           --arg url "${{ inputs.target_url }}" \
           --arg uid "${{ inputs.user_id }}" \
           --arg pid "${{ inputs.project_id }}" \
-          --arg pat "$PAT_INPUT" \
-          --arg branch "$BRANCH_INPUT" '
+          --arg pat "${PAT_INPUT:-}" \
+          --arg branch "${BRANCH_INPUT:-}" '
           {
             target_url: $url,
             user_id: $uid,
             project_id: $pid
           }
-          + (if $pat != "" then { pat_token: $pat } else {} end)
-          + (if $branch != "" then { branch: $branch } else {} end)')
+          + (if ($pat|length) > 0 then { pat_token: $pat } else {} end)
+          + (if ($branch|length) > 0 then { branch: $branch } else {} end)')
+
+        echo "DEBUG: Final JSON Payload:"
+        echo "$JSON_PAYLOAD" | jq '.'
 
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://dev-secureci.clockhash.com/backend/scan/pre-request" \
           -H "Content-Type: application/json" \
@@ -94,7 +106,6 @@ runs:
         elif [ "$CURRENT_STATUS" = "FAILED" ]; then
           echo "::error::❌ Pre-scan failed. [View Report]($REPORT_URL)"
           
-          # Show detailed summary errors if available
           SUMMARIES=$(echo "$POLL_RESPONSE" | jq -c '.scan_summaries[]?')
           if [ -n "$SUMMARIES" ]; then
             echo "$SUMMARIES" | while read -r item; do
@@ -109,4 +120,3 @@ runs:
           echo "🔗 [View Report]($REPORT_URL)"
           exit 1
         fi
-
