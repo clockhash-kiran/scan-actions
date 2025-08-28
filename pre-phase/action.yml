@@ -34,13 +34,6 @@ runs:
         BRANCH_INPUT="${{ inputs.branch || '' }}"
         PAT_INPUT="${{ inputs.pat || '' }}"
 
-        echo "DEBUG: Preparing JSON payload..."
-        echo "  url=${{ inputs.target_url }}"
-        echo "  uid=${{ inputs.user_id }}"
-        echo "  pid=${{ inputs.project_id }}"
-        echo "  pat=$PAT_INPUT"
-        echo "  branch=$BRANCH_INPUT"
-
         JSON_PAYLOAD=$(jq -n \
           --arg url "${{ inputs.target_url }}" \
           --arg uid "${{ inputs.user_id }}" \
@@ -65,11 +58,13 @@ runs:
 
         STATUS_CODE=$(echo "$RESPONSE" | tail -n1)
         BODY=$(echo "$RESPONSE" | sed '$d')
-        EVENT_ID=$(echo "$BODY" | jq -r '.event_id // empty')
-        MESSAGE=$(echo "$BODY" | jq -r '.message // empty')
+
+        EVENT_ID=$(echo "$BODY" | jq -r 'try .event_id // empty')
+        MESSAGE=$(echo "$BODY" | jq -r 'try .message // empty')
 
         if [ "$STATUS_CODE" != "200" ] || [ -z "$EVENT_ID" ]; then
-          echo "::error::Failed to trigger scan. Message: $MESSAGE"
+          echo "::error::Failed to trigger scan. Message: ${MESSAGE:-Unknown error}"
+          echo "DEBUG: Raw body -> $BODY"
           exit 1
         fi
 
@@ -80,10 +75,11 @@ runs:
         ATTEMPTS=30
         INTERVAL=10
         LAST_STATUS=""
+        POLL_RESPONSE=""
 
         for i in $(seq 1 $ATTEMPTS); do
           POLL_RESPONSE=$(curl -s -X GET "$POLL_URL" -H "Authorization: Bearer ${{ inputs.api_token }}")
-          CURRENT_STATUS=$(echo "$POLL_RESPONSE" | jq -r '.status // empty')
+          CURRENT_STATUS=$(echo "$POLL_RESPONSE" | jq -r 'try .status // empty')
 
           if [ "$CURRENT_STATUS" != "$LAST_STATUS" ]; then
             echo "🔄 Status changed: $LAST_STATUS ➡️ $CURRENT_STATUS"
@@ -105,12 +101,12 @@ runs:
           echo "::notice::✅ Pre-scan completed. [View Report]($REPORT_URL)"
         elif [ "$CURRENT_STATUS" = "FAILED" ]; then
           echo "::error::❌ Pre-scan failed. [View Report]($REPORT_URL)"
-          
-          SUMMARIES=$(echo "$POLL_RESPONSE" | jq -c '.scan_summaries[]?')
+
+          SUMMARIES=$(echo "$POLL_RESPONSE" | jq -c 'try .scan_summaries[]? // empty')
           if [ -n "$SUMMARIES" ]; then
             echo "$SUMMARIES" | while read -r item; do
-              TOOL=$(echo "$item" | jq -r '.tool_name')
-              MSG=$(echo "$item" | jq -r '.summary.message')
+              TOOL=$(echo "$item" | jq -r 'try .tool_name // "unknown"')
+              MSG=$(echo "$item" | jq -r 'try .summary.message // "no message"')
               echo "::error::[$TOOL] $MSG"
             done
           fi
