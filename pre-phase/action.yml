@@ -77,9 +77,21 @@ runs:
         LAST_STATUS=""
         POLL_RESPONSE=""
 
+        # JSON validation helper
+        is_json() {
+          echo "$1" | jq empty >/dev/null 2>&1
+        }
+
         for i in $(seq 1 $ATTEMPTS); do
           POLL_RESPONSE=$(curl -s -X GET "$POLL_URL" -H "Authorization: Bearer ${{ inputs.api_token }}")
-          CURRENT_STATUS=$(echo "$POLL_RESPONSE" | jq -r 'try .status // empty')
+
+          if is_json "$POLL_RESPONSE"; then
+            CURRENT_STATUS=$(echo "$POLL_RESPONSE" | jq -r 'try .status // empty')
+          else
+            echo "⚠️ Non-JSON response from API (attempt $i):"
+            echo "$POLL_RESPONSE"
+            CURRENT_STATUS=""
+          fi
 
           if [ "$CURRENT_STATUS" != "$LAST_STATUS" ]; then
             echo "🔄 Status changed: $LAST_STATUS ➡️ $CURRENT_STATUS"
@@ -102,14 +114,20 @@ runs:
         elif [ "$CURRENT_STATUS" = "FAILED" ]; then
           echo "::error::❌ Pre-scan failed. [View Report]($REPORT_URL)"
 
-          SUMMARIES=$(echo "$POLL_RESPONSE" | jq -c 'try .scan_summaries[]? // empty')
-          if [ -n "$SUMMARIES" ]; then
-            echo "$SUMMARIES" | while read -r item; do
-              TOOL=$(echo "$item" | jq -r 'try .tool_name // "unknown"')
-              MSG=$(echo "$item" | jq -r 'try .summary.message // "no message"')
-              echo "::error::[$TOOL] $MSG"
-            done
+          if is_json "$POLL_RESPONSE"; then
+            SUMMARIES=$(echo "$POLL_RESPONSE" | jq -c 'try .scan_summaries[]? // empty')
+            if [ -n "$SUMMARIES" ]; then
+              echo "$SUMMARIES" | while read -r item; do
+                TOOL=$(echo "$item" | jq -r 'try .tool_name // "unknown"')
+                MSG=$(echo "$item" | jq -r 'try .summary.message // "no message"')
+                echo "::error::[$TOOL] $MSG"
+              done
+            fi
+          else
+            echo "⚠️ Could not parse scan summaries (non-JSON response)."
+            echo "$POLL_RESPONSE"
           fi
+
           exit 1
         else
           echo "::error::⚠️ Scan timed out after $((ATTEMPTS * INTERVAL)) seconds. Final status: $CURRENT_STATUS"
