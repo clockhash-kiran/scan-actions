@@ -87,7 +87,7 @@ runs:
 
         echo "::endgroup::"
 
-        REPORT_URL="https://secureci.clockhash.com/report/$EVENT_ID"
+        REPORT_URL="https://secureci.clockhash.com/summary/$EVENT_ID"
 
         if [ "$CURRENT_STATUS" = "COMPLETED" ]; then
           echo "::notice::✅ Pre-scan completed. [View Report]($REPORT_URL)"
@@ -109,3 +109,4 @@ runs:
           echo "🔗 [View Report]($REPORT_URL)"
           exit 1
         fi
+
