@@ -29,24 +29,25 @@ runs:
       run: |
         echo "::group::🚀 Triggering Pre-Scan"
 
-        # normalize optional inputs (strip null → empty)
-        BRANCH="${{ inputs.branch }}"
-        PAT="${{ inputs.pat }}"
-        BRANCH="${BRANCH:-}"
+        # sanitize inputs
+        TARGET="${{ inputs.target_url }}"
+        USER_ID="${{ inputs.user_id }}"
+        PROJECT_ID="${{ inputs.project_id }}"
+        BRANCH="${{ inputs.branch:-}}"
+        PAT="${{ inputs.pat:-}}"
+
+        # remove literal null
+        TARGET="${TARGET//null/}"
+        USER_ID="${USER_ID//null/}"
+        PROJECT_ID="${PROJECT_ID//null/}"
         BRANCH="${BRANCH//null/}"
-        PAT="${PAT:-}"
         PAT="${PAT//null/}"
 
-        # build payload safely
-        PAYLOAD=$(jq -n \
-          --arg url "${{ inputs.target_url }}" \
-          --arg uid "${{ inputs.user_id }}" \
-          --arg pid "${{ inputs.project_id }}" \
-          --arg pat "$PAT" \
-          --arg branch "$BRANCH" '
-          {target_url: $url, user_id: $uid, project_id: $pid}
-          + (if ($pat | length) > 0 then {pat_token: $pat} else {} end)
-          + (if ($branch | length) > 0 then {branch: $branch} else {} end)')
+        # build JSON payload manually
+        PAYLOAD="{\"target_url\":\"$TARGET\",\"user_id\":\"$USER_ID\",\"project_id\":\"$PROJECT_ID\""
+        [ -n "$BRANCH" ] && PAYLOAD+=",\"branch\":\"$BRANCH\""
+        [ -n "$PAT" ] && PAYLOAD+=",\"pat_token\":\"$PAT\""
+        PAYLOAD+="}"
 
         RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
           -H "Content-Type: application/json" \
@@ -56,8 +57,8 @@ runs:
 
         STATUS=$(echo "$RESPONSE" | tail -n1)
         BODY=$(echo "$RESPONSE" | sed '$d')
-        EVENT_ID=$(echo "$BODY" | jq -r '.event_id // empty')
-        MESSAGE=$(echo "$BODY" | jq -r '.message // empty')
+        EVENT_ID=$(echo "$BODY" | grep -oP '"event_id"\s*:\s*"\K[^"]+')
+        MESSAGE=$(echo "$BODY" | grep -oP '"message"\s*:\s*"\K[^"]*')
 
         if [ "$STATUS" != "200" ] || [ -z "$EVENT_ID" ]; then
           echo "::error::Failed to trigger scan: $MESSAGE"
@@ -67,14 +68,14 @@ runs:
         echo "::endgroup::"
         echo "::group::⏳ Polling Scan Status"
 
-        POLL_URL="https://secureci.clockhash.com/backend/scan/scan-status?event_id=$EVENT_ID&user_id=${{ inputs.user_id }}"
+        POLL_URL="https://secureci.clockhash.com/backend/scan/scan-status?event_id=$EVENT_ID&user_id=$USER_ID"
         ATTEMPTS=30
         INTERVAL=10
         TOTAL_TIME=$((ATTEMPTS * INTERVAL))
 
         for i in $(seq 1 $ATTEMPTS); do
           POLL=$(curl -s -X GET -H "Authorization: Bearer ${{ inputs.api_token }}" "$POLL_URL")
-          STATUS_NOW=$(echo "$POLL" | jq -r '.status // empty')
+          STATUS_NOW=$(echo "$POLL" | grep -oP '"status"\s*:\s*"\K[^"]+')
 
           ELAPSED=$((i * INTERVAL))
           REMAIN=$((TOTAL_TIME - ELAPSED))
@@ -114,12 +115,6 @@ runs:
           echo "🔗 Report: $REPORT"
           echo "==============================="
           echo "::error::❌ Pre-scan failed: [View Report]($REPORT)"
-
-          jq -c '.scan_summaries[]?' <<< "$POLL" | while read -r item; do
-            TOOL=$(jq -r '.tool_name' <<< "$item")
-            MSG=$(jq -r '.summary.message' <<< "$item")
-            echo "::error::[$TOOL] $MSG"
-          done
           exit 1
         else
           echo "⚠️ PRE-SCAN TIMED OUT"
