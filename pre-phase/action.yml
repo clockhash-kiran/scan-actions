@@ -26,7 +26,7 @@ inputs:
 
 runs:
   using: "docker"
-  image: "docker://kirandockerch/hashsecured_actions:v1"
+  image: "docker://kirandockerch/hashsecured_actions:v2"
   args:
     - "--phase"
     - "${{ inputs.phase }}"
@@ -42,4 +42,5 @@ runs:
     - "${{ inputs.branch }}"
     - "--pat"
     - "${{ inputs.pat }}"
+
 
