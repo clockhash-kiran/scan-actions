@@ -1,112 +1,118 @@
-name: 'Pre Phase'
-description: 'Triggers a pre-deployment scan via API and fails on critical findings.'
+name: 'Pre Phase Scan'
+description: 'Triggers pre-deployment scan and fails on critical findings.'
 
 inputs:
   target_url:
-    description: 'Target GitHub repository or deployed URL'
     required: true
   user_id:
-    description: 'User ID for the scan request'
     required: true
   project_id:
-    description: 'Project ID for the scan request'
     required: true
   api_token:
-    description: 'Bearer token for authorization'
     required: true
   pat:
-    description: 'Optional GitHub PAT for private repo access'
     required: false
   branch:
-    description: 'Optional branch name'
     required: false
 
 runs:
   using: 'composite'
   steps:
-    - name: Trigger and Monitor Pre-Scan
+    - name: Trigger & Monitor Pre-Scan
       shell: bash
       run: |
         echo "::group::🚀 Triggering Pre-Scan"
 
-        BRANCH_INPUT="${{ inputs.branch }}"
-        PAT_INPUT="${{ inputs.pat }}"
+        BRANCH="${{ inputs.branch:-}}"
+        PAT="${{ inputs.pat:-}}"
 
-        JSON_PAYLOAD=$(jq -n \
+        PAYLOAD=$(jq -n \
           --arg url "${{ inputs.target_url }}" \
           --arg uid "${{ inputs.user_id }}" \
           --arg pid "${{ inputs.project_id }}" \
-          --arg pat "$PAT_INPUT" \
-          --arg branch "$BRANCH_INPUT" '
-          {
-            target_url: $url,
-            user_id: $uid,
-            project_id: $pid
-          }
-          + (if $pat != "" then { pat_token: $pat } else {} end)
-          + (if $branch != "" then { branch: $branch } else {} end)')
+          --arg pat "$PAT" \
+          --arg branch "$BRANCH" '
+          {target_url: $url, user_id: $uid, project_id: $pid}
+          + (if ($pat | length) > 0 then {pat_token: $pat} else {} end)
+          + (if ($branch | length) > 0 then {branch: $branch} else {} end)')
 
-        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "https://secureci.clockhash.com/backend/scan/pre-request" \
+        RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ inputs.api_token }}" \
-          -d "$JSON_PAYLOAD")
+          -d "$PAYLOAD" \
+          "https://hashsecured.com/backend/scan/pre-request")
 
-        STATUS_CODE=$(echo "$RESPONSE" | tail -n1)
+        STATUS=$(echo "$RESPONSE" | tail -n1)
         BODY=$(echo "$RESPONSE" | sed '$d')
         EVENT_ID=$(echo "$BODY" | jq -r '.event_id // empty')
         MESSAGE=$(echo "$BODY" | jq -r '.message // empty')
 
-        if [ "$STATUS_CODE" != "200" ] || [ -z "$EVENT_ID" ]; then
-          echo "::error::Failed to trigger scan. Message: $MESSAGE"
+        if [ "$STATUS" != "200" ] || [ -z "$EVENT_ID" ]; then
+          echo "::error::Failed to trigger scan: $MESSAGE"
           exit 1
         fi
 
         echo "::endgroup::"
         echo "::group::⏳ Polling Scan Status"
 
-        POLL_URL="https://secureci.clockhash.com/backend/scan/scan-status?event_id=$EVENT_ID&user_id=${{ inputs.user_id }}"
+        POLL_URL="https://hashsecured.com/backend/scan/scan-status?event_id=$EVENT_ID&user_id=${{ inputs.user_id }}"
         ATTEMPTS=30
         INTERVAL=10
-        LAST_STATUS=""
+        TOTAL_TIME=$((ATTEMPTS * INTERVAL))
 
         for i in $(seq 1 $ATTEMPTS); do
-          POLL_RESPONSE=$(curl -s -X GET "$POLL_URL" -H "Authorization: Bearer ${{ inputs.api_token }}")
-          CURRENT_STATUS=$(echo "$POLL_RESPONSE" | jq -r '.status // empty')
+          POLL=$(curl -s -X GET -H "Authorization: Bearer ${{ inputs.api_token }}" "$POLL_URL")
+          STATUS_NOW=$(echo "$POLL" | jq -r '.status // empty')
 
-          if [ "$CURRENT_STATUS" != "$LAST_STATUS" ]; then
-            echo "🔄 Status changed: $LAST_STATUS ➡️ $CURRENT_STATUS"
-            LAST_STATUS="$CURRENT_STATUS"
-          fi
+          ELAPSED=$((i * INTERVAL))
+          REMAIN=$((TOTAL_TIME - ELAPSED))
+          PERCENT=$(( (ELAPSED * 100) / TOTAL_TIME ))
+          FILLED=$((PERCENT / 5))
+          EMPTY=$((20 - FILLED))
 
-          if [ "$CURRENT_STATUS" = "COMPLETED" ] || [ "$CURRENT_STATUS" = "FAILED" ]; then
+          case "$STATUS_NOW" in
+            COMPLETED) BLOCK="🟩" ;;
+            FAILED) BLOCK="🟥" ;;
+            *) BLOCK="🟨" ;;
+          esac
+
+          BAR="$(printf "$BLOCK%.0s" $(seq 1 $FILLED))$(printf "▫️%.0s" $(seq 1 $EMPTY))"
+
+          echo -ne "\r⏳ [$BAR] $PERCENT% | Status: $STATUS_NOW | ${ELAPSED}s / ${TOTAL_TIME}s (ETA: ${REMAIN}s)"
+
+          if [[ "$STATUS_NOW" == "COMPLETED" || "$STATUS_NOW" == "FAILED" ]]; then
+            echo ""
             break
           fi
-
           sleep $INTERVAL
         done
 
         echo "::endgroup::"
+        REPORT="https://hashsecured.com/summary/$EVENT_ID"
 
-        REPORT_URL="https://secureci.clockhash.com/summary/$EVENT_ID"
+        echo ""
+        echo "==============================="
+        if [[ "$STATUS_NOW" == "COMPLETED" ]]; then
+          echo "✅ PRE-SCAN COMPLETED SUCCESSFULLY"
+          echo "🔗 Report: $REPORT"
+          echo "==============================="
+          echo "::notice::✅ Pre-scan complete: [View Report]($REPORT)"
+        elif [[ "$STATUS_NOW" == "FAILED" ]]; then
+          echo "❌ PRE-SCAN FAILED"
+          echo "🔗 Report: $REPORT"
+          echo "==============================="
+          echo "::error::❌ Pre-scan failed: [View Report]($REPORT)"
 
-        if [ "$CURRENT_STATUS" = "COMPLETED" ]; then
-          echo "::notice::✅ Pre-scan completed. [View Report]($REPORT_URL)"
-        elif [ "$CURRENT_STATUS" = "FAILED" ]; then
-          echo "::error::❌ Pre-scan failed. [View Report]($REPORT_URL)"
-          
-          # Show detailed summary errors if available
-          SUMMARIES=$(echo "$POLL_RESPONSE" | jq -c '.scan_summaries[]?')
-          if [ -n "$SUMMARIES" ]; then
-            echo "$SUMMARIES" | while read -r item; do
-              TOOL=$(echo "$item" | jq -r '.tool_name')
-              MSG=$(echo "$item" | jq -r '.summary.message')
-              echo "::error::[$TOOL] $MSG"
-            done
-          fi
+          jq -c '.scan_summaries[]?' <<< "$POLL" | while read -r item; do
+            TOOL=$(jq -r '.tool_name' <<< "$item")
+            MSG=$(jq -r '.summary.message' <<< "$item")
+            echo "::error::[$TOOL] $MSG"
+          done
           exit 1
         else
-          echo "::error::⚠️ Scan timed out after $((ATTEMPTS * INTERVAL)) seconds. Final status: $CURRENT_STATUS"
-          echo "🔗 [View Report]($REPORT_URL)"
+          echo "⚠️ PRE-SCAN TIMED OUT"
+          echo "🔗 Report: $REPORT"
+          echo "==============================="
+          echo "::warning::⚠️ Scan timed out after ${TOTAL_TIME}s. Status: $STATUS_NOW"
           exit 1
         fi
-
