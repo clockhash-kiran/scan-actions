@@ -3,16 +3,22 @@ description: 'Triggers pre-deployment scan and fails on critical findings.'
 
 inputs:
   target_url:
+    description: 'Target GitHub repository or deployed URL'
     required: true
   user_id:
+    description: 'User ID for the scan request'
     required: true
   project_id:
+    description: 'Project ID for the scan request'
     required: true
   api_token:
+    description: 'Bearer token for authorization'
     required: true
   pat:
+    description: 'Optional GitHub PAT for private repo access'
     required: false
   branch:
+    description: 'Optional branch name'
     required: false
 
 runs:
@@ -23,9 +29,13 @@ runs:
       run: |
         echo "::group::🚀 Triggering Pre-Scan"
 
-        BRANCH="${{ inputs.branch:-}}"
-        PAT="${{ inputs.pat:-}}"
+        # normalize optional inputs
+        BRANCH="${{ inputs.branch }}"
+        PAT="${{ inputs.pat }}"
+        BRANCH="${BRANCH:-}"
+        PAT="${PAT:-}"
 
+        # build payload safely
         PAYLOAD=$(jq -n \
           --arg url "${{ inputs.target_url }}" \
           --arg uid "${{ inputs.user_id }}" \
@@ -40,7 +50,7 @@ runs:
           -H "Content-Type: application/json" \
           -H "Authorization: Bearer ${{ inputs.api_token }}" \
           -d "$PAYLOAD" \
-          "https://hashsecured.com/backend/scan/pre-request")
+          "https://secureci.clockhash.com/backend/scan/pre-request")
 
         STATUS=$(echo "$RESPONSE" | tail -n1)
         BODY=$(echo "$RESPONSE" | sed '$d')
@@ -55,7 +65,7 @@ runs:
         echo "::endgroup::"
         echo "::group::⏳ Polling Scan Status"
 
-        POLL_URL="https://hashsecured.com/backend/scan/scan-status?event_id=$EVENT_ID&user_id=${{ inputs.user_id }}"
+        POLL_URL="https://secureci.clockhash.com/backend/scan/scan-status?event_id=$EVENT_ID&user_id=${{ inputs.user_id }}"
         ATTEMPTS=30
         INTERVAL=10
         TOTAL_TIME=$((ATTEMPTS * INTERVAL))
@@ -88,7 +98,7 @@ runs:
         done
 
         echo "::endgroup::"
-        REPORT="https://hashsecured.com/summary/$EVENT_ID"
+        REPORT="https://secureci.clockhash.com/summary/$EVENT_ID"
 
         echo ""
         echo "==============================="
