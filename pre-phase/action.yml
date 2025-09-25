@@ -27,6 +27,7 @@ inputs:
 runs:
   using: "docker"
   image: "docker://kirandockerch/hashsecured_actions:v2"
+  entrypoint: ["python3", "scan_action.py"]
   args:
     - "--phase"
     - "${{ inputs.phase }}"
@@ -42,5 +43,6 @@ runs:
     - "${{ inputs.branch }}"
     - "--pat"
     - "${{ inputs.pat }}"
+
 
 
