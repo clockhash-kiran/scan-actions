@@ -29,11 +29,13 @@ runs:
       run: |
         echo "::group::🚀 Triggering Pre-Scan"
 
-        # normalize optional inputs
+        # normalize optional inputs (strip null → empty)
         BRANCH="${{ inputs.branch }}"
         PAT="${{ inputs.pat }}"
         BRANCH="${BRANCH:-}"
+        BRANCH="${BRANCH//null/}"
         PAT="${PAT:-}"
+        PAT="${PAT//null/}"
 
         # build payload safely
         PAYLOAD=$(jq -n \
