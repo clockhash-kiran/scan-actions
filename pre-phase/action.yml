@@ -1,5 +1,5 @@
 name: 'Pre Phase Scan'
-description: 'Triggers pre-deployment scan and fails on critical findings.'
+description: 'Triggers a pre-deployment scan and fails on critical findings.'
 
 inputs:
   target_url:
@@ -29,21 +29,25 @@ runs:
       run: |
         echo "::group::🚀 Triggering Pre-Scan"
 
-        # sanitize inputs
+        # Sanitize optional inputs
         TARGET="${{ inputs.target_url }}"
         USER_ID="${{ inputs.user_id }}"
         PROJECT_ID="${{ inputs.project_id }}"
-        BRANCH="${{ inputs.branch:-}}"
-        PAT="${{ inputs.pat:-}}"
+        BRANCH="${{ inputs.branch }}"
+        PAT="${{ inputs.pat }}"
 
-        # remove literal null
+        TARGET="${TARGET:-}"
         TARGET="${TARGET//null/}"
+        USER_ID="${USER_ID:-}"
         USER_ID="${USER_ID//null/}"
+        PROJECT_ID="${PROJECT_ID:-}"
         PROJECT_ID="${PROJECT_ID//null/}"
+        BRANCH="${BRANCH:-}"
         BRANCH="${BRANCH//null/}"
+        PAT="${PAT:-}"
         PAT="${PAT//null/}"
 
-        # build JSON payload manually
+        # Build JSON payload without jq
         PAYLOAD="{\"target_url\":\"$TARGET\",\"user_id\":\"$USER_ID\",\"project_id\":\"$PROJECT_ID\""
         [ -n "$BRANCH" ] && PAYLOAD+=",\"branch\":\"$BRANCH\""
         [ -n "$PAT" ] && PAYLOAD+=",\"pat_token\":\"$PAT\""
