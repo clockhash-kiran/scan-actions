@@ -1,37 +1,20 @@
-name: "All Phase Scans"
-description: "Handles Pre, Mid, and Post phase scans via API."
-
-inputs:
-  phase:
-    description: "Phase to run (pre/mid/post)"
-    required: true
-  target_url:
-    description: "Target repository or deployed URL"
-    required: true
-  user_id:
-    description: "User ID for the scan request"
-    required: true
-  project_id:
-    description: "Project ID for the scan request"
-    required: true
-  api_token:
-    description: "Bearer token for authorization"
-    required: true
-  branch:
-    description: "Optional branch name"
-    required: false
-  pat:
-    description: "Optional GitHub PAT for private repo access"
-    required: false
-
 runs:
   using: "docker"
   image: "docker://kirandockerch/hashsecured_actions:latest"
+  entrypoint: python3
   args:
+    - scan_action.py
+    - --phase
     - ${{ inputs.phase }}
+    - --target_url
     - ${{ inputs.target_url }}
+    - --user_id
     - ${{ inputs.user_id }}
+    - --project_id
     - ${{ inputs.project_id }}
+    - --api_token
     - ${{ inputs.api_token }}
+    - --branch
     - ${{ inputs.branch }}
+    - --pat
     - ${{ inputs.pat }}
