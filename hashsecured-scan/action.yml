@@ -23,6 +23,10 @@ inputs:
   pat:
     description: "Optional GitHub PAT for private repo access"
     required: false
+  break:
+    description: "Optional flip switch to break pipeline on high/critical findings"
+    required: false
+    default: false
 
 runs:
   using: "docker"
@@ -44,9 +48,4 @@ runs:
     - "${{ inputs.branch }}"
     - "--pat"
     - "${{ inputs.pat }}"
-
-
-
-
-
-
+    - ${{ inputs.break && '--break' }}
