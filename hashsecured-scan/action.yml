@@ -48,4 +48,6 @@ runs:
     - "${{ inputs.branch }}"
     - "--pat"
     - "${{ inputs.pat }}"
-    - ${{ inputs.break == 'true' && '--break' || '' }}
+    - "--break"
+    - "${{ inputs.break }}"
+
