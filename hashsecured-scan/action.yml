@@ -27,6 +27,9 @@ inputs:
     description: "Flip switch to break pipeline on high/critical findings"
     required: false
     default: false
+  tools:
+    description: "List of tools to run on the scan"
+    required: false
 
 runs:
   using: "docker"
@@ -50,5 +53,8 @@ runs:
     - "${{ inputs.pat }}"
     - "--break"
     - "${{ inputs.break }}"
+    - "--tools"
+    - "${{ inputs.tools }}"
+
 
 
